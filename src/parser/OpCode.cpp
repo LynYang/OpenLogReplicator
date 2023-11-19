@@ -545,6 +545,9 @@ namespace OpenLogReplicator {
 
     void OpCode::kdliFill(Ctx* ctx, RedoLogRecord* redoLogRecord __attribute__((unused)), uint64_t& fieldPos __attribute__((unused)), uint16_t& fieldLength,
                           uint8_t code) {
+        if (fieldLength < 8)
+            throw RedoLogException(50061, "too short field kdli fill: " + std::to_string(fieldLength) + " offset: " +
+                                          std::to_string(redoLogRecord->dataOffset));
 
         redoLogRecord->indKeyDataCode = code;
         redoLogRecord->lobOffset = ctx->read16(redoLogRecord->data + fieldPos + 2);;
