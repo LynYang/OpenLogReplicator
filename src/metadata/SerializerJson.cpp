@@ -34,11 +34,16 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #include "../common/SysTabPart.h"
 #include "../common/SysTabSubPart.h"
 #include "../common/SysUser.h"
+#include "../common/XdbTtSet.h"
+#include "../common/XdbXNm.h"
+#include "../common/XdbXQn.h"
+#include "../common/XdbXPt.h"
 #include "../common/typeRowId.h"
 #include "RedoLog.h"
 #include "Metadata.h"
 #include "Schema.h"
 #include "SchemaElement.h"
+#include "SchemaXml.h"
 #include "SerializerJson.h"
 
 namespace OpenLogReplicator {
@@ -424,6 +429,84 @@ namespace OpenLogReplicator {
                     R"(,"single":)" << std::dec << static_cast<uint64_t>(sysUser->single) << "}";
         }
 
+        // XDB.XDB$TTSET
+        ss << "]," SERIALIZER_ENDL << R"("xdb-ttset":[)";
+        hasPrev = false;
+        for (auto xdbTtSetMapRowIdIt : metadata->schema->xdbTtSetMapRowId) {
+            XdbTtSet* xdbTtSet = xdbTtSetMapRowIdIt.second;
+
+            if (hasPrev)
+                ss << ",";
+            else
+                hasPrev = true;
+
+            ss SERIALIZER_ENDL << R"({"row-id":")" << xdbTtSet->rowId <<
+                               R"(","guid":")" << std::dec << xdbTtSet->guid <<
+                               R"(","toksuf":")";
+            Ctx::writeEscapeValue(ss, xdbTtSet->tokSuf);
+            ss << R"(","flags":)" << std::dec << xdbTtSet->flags <<
+                R"(,"obj":)" << std::dec << xdbTtSet->obj << "}";
+        }
+
+        for (auto schemaXmlIt : metadata->schema->schemaXmlMap) {
+            SchemaXml* schemaXml = schemaXmlIt.second;
+
+            // XDB.X$NMxxx
+            ss << "]," SERIALIZER_ENDL << R"("xdb-xnm)" << schemaXml->tokSuf << R"(":[)";
+            hasPrev = false;
+            for (auto xdbXNmMapRowIdIt : schemaXml->xdbXNmMapRowId) {
+                XdbXNm* xdbXNm = xdbXNmMapRowIdIt.second;
+
+                if (hasPrev)
+                    ss << ",";
+                else
+                    hasPrev = true;
+
+                ss SERIALIZER_ENDL << R"({"row-id":")" << xdbXNm->rowId <<
+                        R"(","nmspcuri":")";
+                Ctx::writeEscapeValue(ss, xdbXNm->nmSpcUri);
+                ss << R"(","id":")" << xdbXNm->id << R"("})";
+            }
+
+            // XDB.X$PTxxx
+            ss << "]," SERIALIZER_ENDL << R"("xdb-xpt)" << schemaXml->tokSuf << R"(":[)";
+            hasPrev = false;
+            for (auto xdbXPtMapRowIdIt : schemaXml->xdbXPtMapRowId) {
+                XdbXPt* xdbXPt = xdbXPtMapRowIdIt.second;
+
+                if (hasPrev)
+                    ss << ",";
+                else
+                    hasPrev = true;
+
+                ss SERIALIZER_ENDL << R"({"row-id":")" << xdbXPt->rowId <<
+                                   R"(","path":")";
+                Ctx::writeEscapeValue(ss, xdbXPt->path);
+                ss << R"(","id":")" << xdbXPt->id << R"("})";
+            }
+
+            // XDB.X$QNxxx
+            ss << "]," SERIALIZER_ENDL << R"("xdb-xqn)" << schemaXml->tokSuf << R"(":[)";
+            hasPrev = false;
+            for (auto xdbXQnMapRowIdIt : schemaXml->xdbXQnMapRowId) {
+                XdbXQn* xdbXQn = xdbXQnMapRowIdIt.second;
+
+                if (hasPrev)
+                    ss << ",";
+                else
+                    hasPrev = true;
+
+                ss SERIALIZER_ENDL << R"({"row-id":")" << xdbXQn->rowId <<
+                                   R"(","nmspcid":")";
+                Ctx::writeEscapeValue(ss, xdbXQn->nmSpcId);
+                ss << R"(","localname":")";
+                Ctx::writeEscapeValue(ss, xdbXQn->localName);
+                ss << R"(","flags":")";
+                Ctx::writeEscapeValue(ss, xdbXQn->flags);
+                ss << R"(","id":")" << xdbXQn->id << R"("})";
+            }
+        }
+
         ss << "]}";
     }
 
@@ -564,6 +647,19 @@ namespace OpenLogReplicator {
                         deserializeSysTabComPart(metadata, fileName, Ctx::getJsonFieldA(fileName, document, "sys-tabcompart"));
                         deserializeSysTabSubPart(metadata, fileName, Ctx::getJsonFieldA(fileName, document, "sys-tabsubpart"));
                         deserializeSysTs(metadata, fileName, Ctx::getJsonFieldA(fileName, document, "sys-ts"));
+                        deserializeXdbTtSet(metadata, fileName, Ctx::getJsonFieldA(fileName, document, "xdb-ttset"));
+
+                        for (auto ttSetIt: metadata->schema->xdbTtSetMapRowId) {
+                            SchemaXml *schemaXml = new SchemaXml(metadata->ctx, ttSetIt.second->tokSuf);
+                            metadata->schema->schemaXmlMap.insert_or_assign(ttSetIt.second->tokSuf, schemaXml);
+
+                            std::string field = "xdb-xnm" + ttSetIt.second->tokSuf;
+                            deserializeXdbXNm(metadata, schemaXml, fileName, Ctx::getJsonFieldA(fileName, document, field.c_str()));
+                            field = "xdb-xpt" + ttSetIt.second->tokSuf;
+                            deserializeXdbXPt(metadata, schemaXml, fileName, Ctx::getJsonFieldA(fileName, document, field.c_str()));
+                            field = "xdb-xqn" + ttSetIt.second->tokSuf;
+                            deserializeXdbXQn(metadata, schemaXml, fileName, Ctx::getJsonFieldA(fileName, document, field.c_str()));
+                        }
                     }
 
                     for (SchemaElement* element: metadata->schemaElements) {
@@ -806,6 +902,50 @@ namespace OpenLogReplicator {
             uint64_t single = Ctx::getJsonFieldU64(fileName, sysUserJson[i], "single");
 
             metadata->schema->dictSysUserAdd(rowId, user, name_, spare11, spare12, single != 0u);
+        }
+    }
+
+    void SerializerJson::deserializeXdbTtSet(Metadata* metadata, const std::string& fileName, const rapidjson::Value& xdbTtSetJson) {
+        for (rapidjson::SizeType i = 0; i < xdbTtSetJson.Size(); ++i) {
+            const char* rowId = Ctx::getJsonFieldS(fileName, ROWID_LENGTH, xdbTtSetJson[i], "row-id");
+            const char* guid = Ctx::getJsonFieldS(fileName, XDB_TTSET_GUID_LENGTH, xdbTtSetJson[i], "guid");
+            const char* tokSuf = Ctx::getJsonFieldS(fileName, XDB_TTSET_TOKSUF_LENGTH, xdbTtSetJson[i], "toksuf");
+            uint64_t flags = Ctx::getJsonFieldU64(fileName, xdbTtSetJson[i], "flags");
+            uint32_t obj = Ctx::getJsonFieldU32(fileName, xdbTtSetJson[i], "obj");
+
+            metadata->schema->dictXdbTtSetAdd(rowId, guid, tokSuf, flags, obj);
+        }
+    }
+
+    void SerializerJson::deserializeXdbXNm(Metadata* metadata, SchemaXml* schemaXml, const std::string& fileName, const rapidjson::Value& xdbXNmJson) {
+        for (rapidjson::SizeType i = 0; i < xdbXNmJson.Size(); ++i) {
+            const char* rowId = Ctx::getJsonFieldS(fileName, ROWID_LENGTH, xdbXNmJson[i], "row-id");
+            const char* nmSpcUri = Ctx::getJsonFieldS(fileName, XDB_XNM_NMSPCURI_LENGTH, xdbXNmJson[i], "nmspcuri");
+            const char* id = Ctx::getJsonFieldS(fileName, XDB_XNM_ID_LENGTH, xdbXNmJson[i], "id");
+
+            metadata->schema->dictXdbXNmAdd(schemaXml, rowId, nmSpcUri, id);
+        }
+    }
+
+    void SerializerJson::deserializeXdbXPt(Metadata* metadata, SchemaXml* schemaXml, const std::string& fileName, const rapidjson::Value& xdbXPtJson) {
+        for (rapidjson::SizeType i = 0; i < xdbXPtJson.Size(); ++i) {
+            const char* rowId = Ctx::getJsonFieldS(fileName, ROWID_LENGTH, xdbXPtJson[i], "row-id");
+            const char* path = Ctx::getJsonFieldS(fileName, XDB_XPT_PATH_LENGTH, xdbXPtJson[i], "path");
+            const char* id = Ctx::getJsonFieldS(fileName, XDB_XPT_ID_LENGTH, xdbXPtJson[i], "id");
+
+            metadata->schema->dictXdbXPtAdd(schemaXml, rowId, path, id);
+        }
+    }
+
+    void SerializerJson::deserializeXdbXQn(Metadata* metadata, SchemaXml* schemaXml, const std::string& fileName, const rapidjson::Value& xdbXQnJson) {
+        for (rapidjson::SizeType i = 0; i < xdbXQnJson.Size(); ++i) {
+            const char* rowId = Ctx::getJsonFieldS(fileName, ROWID_LENGTH, xdbXQnJson[i], "row-id");
+            const char* nmSpcId = Ctx::getJsonFieldS(fileName, XDB_XQN_NMSPCID_LENGTH, xdbXQnJson[i], "nmspcid");
+            const char* localName = Ctx::getJsonFieldS(fileName, XDB_XQN_LOCALNAME_LENGTH, xdbXQnJson[i], "localname");
+            const char* flags = Ctx::getJsonFieldS(fileName, XDB_XQN_FLAGS_LENGTH, xdbXQnJson[i], "flags");
+            const char* id = Ctx::getJsonFieldS(fileName, XDB_XQN_ID_LENGTH, xdbXQnJson[i], "id");
+
+            metadata->schema->dictXdbXQnAdd(schemaXml, rowId, nmSpcId, localName, flags, id);
         }
     }
 }

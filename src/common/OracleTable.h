@@ -41,6 +41,7 @@ namespace OpenLogReplicator {
         typeCol guardSegNo;
         std::string owner;
         std::string name;
+        std::string tokSuf;
         std::vector<OracleColumn*> columns;
         std::vector<OracleLob*> lobs;
         std::vector<typeObj2> tablePartitions;

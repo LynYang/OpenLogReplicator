@@ -26,17 +26,40 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #include "../common/OracleColumn.h"
 #include "../common/OracleLob.h"
 #include "../common/OracleTable.h"
+#include "../common/SysCCol.h"
+#include "../common/SysCDef.h"
 #include "../common/SysCol.h"
 #include "../common/SysDeferredStg.h"
+#include "../common/SysECol.h"
+#include "../common/SysLob.h"
+#include "../common/SysLobCompPart.h"
+#include "../common/SysLobFrag.h"
+#include "../common/SysObj.h"
 #include "../common/SysTab.h"
+#include "../common/SysTabComPart.h"
+#include "../common/SysTabPart.h"
+#include "../common/SysTabSubPart.h"
+#include "../common/SysUser.h"
+#include "../common/XdbTtSet.h"
+#include "../common/XdbXNm.h"
+#include "../common/XdbXPt.h"
+#include "../common/XdbXQn.h"
 #include "../locales/Locales.h"
 #include "Schema.h"
+#include "SchemaElement.h"
+#include "SchemaXml.h"
 
 namespace OpenLogReplicator {
     Schema::Schema(Ctx* newCtx, Locales* newLocales) :
             ctx(newCtx),
             locales(newLocales),
             sysUserAdaptive(sysUserRowId, 0, "", 0, 0, false),
+            scn(ZERO_SCN),
+            refScn(ZERO_SCN),
+            loaded(false),
+            columnTmp(nullptr),
+            lobTmp(nullptr),
+            tableTmp(nullptr),
             sysCColTmp(nullptr),
             sysCDefTmp(nullptr),
             sysColTmp(nullptr),
@@ -52,12 +75,10 @@ namespace OpenLogReplicator {
             sysTabSubPartTmp(nullptr),
             sysTsTmp(nullptr),
             sysUserTmp(nullptr),
-            scn(ZERO_SCN),
-            refScn(ZERO_SCN),
-            loaded(false),
-            columnTmp(nullptr),
-            lobTmp(nullptr),
-            tableTmp(nullptr) {
+            xdbTtSetTmp(nullptr),
+            xdbXNmTmp(nullptr),
+            xdbXPtTmp(nullptr),
+            xdbXQnTmp(nullptr) {
     }
 
     Schema::~Schema() {
@@ -139,6 +160,26 @@ namespace OpenLogReplicator {
         if (sysUserTmp != nullptr) {
             delete sysUserTmp;
             sysUserTmp = nullptr;
+        }
+
+        if (xdbTtSetTmp != nullptr) {
+            delete xdbTtSetTmp;
+            xdbTtSetTmp = nullptr;
+        }
+
+        if (xdbXNmTmp != nullptr) {
+            delete xdbXNmTmp;
+            xdbXNmTmp = nullptr;
+        }
+
+        if (xdbXPtTmp != nullptr) {
+            delete xdbXPtTmp;
+            xdbXPtTmp = nullptr;
+        }
+
+        if (xdbXQnTmp != nullptr) {
+            delete xdbXQnTmp;
+            xdbXQnTmp = nullptr;
         }
 
         purgeMetadata();
@@ -344,6 +385,24 @@ namespace OpenLogReplicator {
         if (!sysUserMapUser.empty())
             ctx->error(50029, "user# map SYS.USER$ not empty, left: " + std::to_string(sysUserMapUser.size()) + " at exit");
 
+        // XDB.XDB$TTSET
+        while (!xdbTtSetMapRowId.empty()) {
+            auto xdbTtSetMapRowIdIt = xdbTtSetMapRowId.cbegin();
+            XdbTtSet* xdbTtSet = xdbTtSetMapRowIdIt->second;
+            dictXdbTtSetDrop(xdbTtSet);
+            delete xdbTtSet;
+        }
+        if (!xdbTtSetMapTs.empty())
+            ctx->error(50029, "guid map XDB.XDB$TTSET not empty, left: " + std::to_string(xdbTtSetMapTs.size()) + " at exit");
+
+        while (!schemaXmlMap.empty()) {
+            auto schemaXmlMapIt = schemaXmlMap.cbegin();
+            SchemaXml* schemaXml = schemaXmlMapIt->second;
+            schemaXml->purgeDicts();
+            schemaXmlMap.erase(schemaXmlMapIt);
+            delete schemaXml;
+        }
+
         resetTouched();
     }
 
@@ -383,6 +442,7 @@ namespace OpenLogReplicator {
                 return false;
             }
         }
+
         for (auto sysCDefMapRowIdIt : otherSchema->sysCDefMapRowId) {
             SysCDef* sysCDef = sysCDefMapRowIdIt.second;
             auto sysCDefMapRowIdIt2 = sysCDefMapRowId.find(sysCDef->rowId);
@@ -430,6 +490,7 @@ namespace OpenLogReplicator {
                 return false;
             }
         }
+
         for (auto sysDeferredStgMapRowIdIt : otherSchema->sysDeferredStgMapRowId) {
             SysDeferredStg* sysDeferredStg = sysDeferredStgMapRowIdIt.second;
             auto sysDeferredStgMapRowIdIt2 = sysDeferredStgMapRowId.find(sysDeferredStg->rowId);
@@ -477,6 +538,7 @@ namespace OpenLogReplicator {
                 return false;
             }
         }
+
         for (auto sysLobMapRowIdIt : otherSchema->sysLobMapRowId) {
             SysLob* sysLob = sysLobMapRowIdIt.second;
             auto sysLobMapRowIdIt2 = sysLobMapRowId.find(sysLob->rowId);
@@ -703,6 +765,45 @@ namespace OpenLogReplicator {
         return true;
     }
 
+    bool Schema::compareXdbTtSet(Schema* otherSchema, std::string& msgs) {
+        for (auto xdbTtSetMapRowIdIt : xdbTtSetMapRowId) {
+            XdbTtSet* xdbTtSet = xdbTtSetMapRowIdIt.second;
+            auto xdbTtSetMapRowIdIt2 = otherSchema->xdbTtSetMapRowId.find(xdbTtSet->rowId);
+            if (xdbTtSetMapRowIdIt2 == otherSchema->xdbTtSetMapRowId.end()) {
+                msgs.assign("schema mismatch: XDB.XDB$TTSET lost ROWID: " + xdbTtSet->rowId.toString());
+                return false;
+            } else if (*xdbTtSet != *(xdbTtSetMapRowIdIt2->second)) {
+                msgs.assign("schema mismatch: XDB.XDB$TTSET differs ROWID: " + xdbTtSet->rowId.toString());
+                return false;
+            }
+        }
+
+        for (auto xdbTtSetMapRowIdIt : otherSchema->xdbTtSetMapRowId) {
+            XdbTtSet* xdbTtSet = xdbTtSetMapRowIdIt.second;
+            auto xdbTtSetMapRowIdIt2 = xdbTtSetMapRowId.find(xdbTtSet->rowId);
+            if (xdbTtSetMapRowIdIt2 == xdbTtSetMapRowId.end()) {
+                msgs.assign("schema mismatch: XDB.XDB$TTSET lost ROWID: " + xdbTtSet->rowId.toString());
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool Schema::compareXdbXNm(Schema* otherSchema, std::string& msgs) {
+        // FIXME
+        return true;
+    }
+
+    bool Schema::compareXdbXQn(Schema* otherSchema, std::string& msgs) {
+        // FIXME
+        return true;
+    }
+
+    bool Schema::compareXdbXPt(Schema* otherSchema, std::string& msgs) {
+        // FIXME
+        return true;
+    }
+
     bool Schema::compare(Schema* otherSchema, std::string& msgs) {
         if (!compareSysCCol(otherSchema, msgs)) return false;
         if (!compareSysCDef(otherSchema, msgs)) return false;
@@ -719,6 +820,10 @@ namespace OpenLogReplicator {
         if (!compareSysTabSubPart(otherSchema, msgs)) return false;
         if (!compareSysTs(otherSchema, msgs)) return false;
         if (!compareSysUser(otherSchema, msgs)) return false;
+        if (!compareXdbTtSet(otherSchema, msgs)) return false;
+        if (!compareXdbXNm(otherSchema, msgs)) return false;
+        if (!compareXdbXPt(otherSchema, msgs)) return false;
+        if (!compareXdbXQn(otherSchema, msgs)) return false;
 
         msgs.assign("");
         return true;
@@ -927,6 +1032,46 @@ namespace OpenLogReplicator {
         sysUserTmp = nullptr;
 
         return true;
+    }
+
+    void Schema::dictXdbTtSetAdd(const char* rowIdStr, const char* guid, const char* tokSuf, uint64_t flags, typeObj obj) {
+        typeRowId rowId(rowIdStr);
+        if (xdbTtSetMapRowId.find(rowId) != xdbTtSetMapRowId.end())
+            throw DataException(50023, "duplicate SYS.TS$ value: (rowid: " + rowId.toString() + ")");
+
+        xdbTtSetTmp = new XdbTtSet(rowId, guid, tokSuf, flags, obj);
+        dictXdbTtSetAdd(xdbTtSetTmp);
+        xdbTtSetTmp = nullptr;
+    }
+
+    void Schema::dictXdbXNmAdd(SchemaXml* schemaXml, const char* rowIdStr, const char* nmSpcUri, const char* id) {
+        typeRowId rowId(rowIdStr);
+        if (schemaXml->xdbXNmMapRowId.find(rowId) != schemaXml->xdbXNmMapRowId.end())
+            throw DataException(50023, "duplicate XDB.X$NM" + schemaXml->tokSuf + " value: (rowid: " + rowId.toString() + ")");
+
+        xdbXNmTmp = new XdbXNm(rowId, nmSpcUri, id);
+        schemaXml->dictXdbXNmAdd(xdbXNmTmp);
+        xdbXNmTmp = nullptr;
+    }
+
+    void Schema::dictXdbXPtAdd(SchemaXml* schemaXml, const char* rowIdStr, const char* path, const char* id) {
+        typeRowId rowId(rowIdStr);
+        if (schemaXml->xdbXPtMapRowId.find(rowId) != schemaXml->xdbXPtMapRowId.end())
+            throw DataException(50023, "duplicate XDB.X$PT" + schemaXml->tokSuf + " value: (rowid: " + rowId.toString() + ")");
+
+        xdbXPtTmp = new XdbXPt(rowId, path, id);
+        schemaXml->dictXdbXPtAdd(xdbXPtTmp);
+        xdbXPtTmp = nullptr;
+    }
+
+    void Schema::dictXdbXQnAdd(SchemaXml* schemaXml, const char* rowIdStr, const char* nmSpcId, const char* localName, const char* flags, const char* id) {
+        typeRowId rowId(rowIdStr);
+        if (schemaXml->xdbXQnMapRowId.find(rowId) != schemaXml->xdbXQnMapRowId.end())
+            throw DataException(50023, "duplicate XDB.X$QN" + schemaXml->tokSuf + " value: (rowid: " + rowId.toString() + ")");
+
+        xdbXQnTmp = new XdbXQn(rowId, nmSpcId, localName, flags, id);
+        schemaXml->dictXdbXQnAdd(xdbXQnTmp);
+        xdbXQnTmp = nullptr;
     }
 
     void Schema::dictSysCColAdd(SysCCol* sysCCol) {
@@ -1270,6 +1415,64 @@ namespace OpenLogReplicator {
         sysUserMapRowId.insert_or_assign(sysUser->rowId, sysUser);
         sysUserMapUser.insert_or_assign(sysUser->user, sysUser);
         sysUserSetTouched.insert(sysUser);
+        touched = true;
+    }
+
+    void Schema::dictXdbTtSetAdd(XdbTtSet* xdbTtSet) {
+        if (ctx->trace & TRACE_SYSTEM)
+            ctx->logTrace(TRACE_SYSTEM, "insert XDB.XDB$TTSET (ROWID: " + xdbTtSet->rowId.toString() +
+                                        ", GUID: '" + xdbTtSet->guid +
+                                        "', TOKSUF: '" + xdbTtSet->tokSuf +
+                                        "', FLAGS: '" + std::to_string(xdbTtSet->flags) +
+                                        "', OBJ#: " + std::to_string(xdbTtSet->obj) + ")");
+
+        auto xdbTtSetMapTsIt = xdbTtSetMapTs.find(xdbTtSet->tokSuf);
+        if (xdbTtSetMapTsIt != xdbTtSetMapTs.end())
+            throw DataException(50024, "duplicate XDB.XDB$TTSET value for unique (TOKSUF: '" + xdbTtSet->tokSuf + "')");
+
+        xdbTtSetMapRowId.insert_or_assign(xdbTtSet->rowId, xdbTtSet);
+        xdbTtSetMapTs.insert_or_assign(xdbTtSet->tokSuf, xdbTtSet);
+        touched = true;
+    }
+
+    void Schema::dictXdbXNmAdd(const std::string& tokSuf, XdbXNm* xdbXNm) {
+        if (ctx->trace & TRACE_SYSTEM)
+            ctx->logTrace(TRACE_SYSTEM, "insert XDB.X$NM" + tokSuf + " (ROWID: " + xdbXNm->rowId.toString() +
+                                        ", NMSPCURI: '" + xdbXNm->nmSpcUri +
+                                        "', ID: '" + xdbXNm->id + "')");
+
+        auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
+        if (schemaXmlMapIt == schemaXmlMap.end())
+            throw DataException(50066 , "missing XDB.X$NM" + tokSuf + " table, insert failed");
+        schemaXmlMapIt->second->dictXdbXNmAdd(xdbXNm);
+        touched = true;
+    }
+
+    void Schema::dictXdbXPtAdd(const std::string& tokSuf, XdbXPt* xdbXPt) {
+        if (ctx->trace & TRACE_SYSTEM)
+            ctx->logTrace(TRACE_SYSTEM, "insert XDB.X$PT" + tokSuf + " (ROWID: " + xdbXPt->rowId.toString() +
+                                        ", PATH: '" + xdbXPt->path +
+                                        "', ID: '" + xdbXPt->id + "')");
+
+        auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
+        if (schemaXmlMapIt == schemaXmlMap.end())
+            throw DataException(50066, "missing XDB.X$PT" + tokSuf + " table, insert failed");
+        schemaXmlMapIt->second->dictXdbXPtAdd(xdbXPt);
+        touched = true;
+    }
+
+    void Schema::dictXdbXQnAdd(const std::string& tokSuf, XdbXQn* xdbXQn) {
+        if (ctx->trace & TRACE_SYSTEM)
+            ctx->logTrace(TRACE_SYSTEM, "insert XDB.X$QN" + tokSuf + " (ROWID: " + xdbXQn->rowId.toString() +
+                                        ", NMSPCID: '" + xdbXQn->nmSpcId +
+                                        "', LOCALNAME: '" + xdbXQn->localName +
+                                        "', FLAGS: '" + xdbXQn->flags +
+                                        "', ID: '" + xdbXQn->id + "')");
+
+        auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
+        if (schemaXmlMapIt == schemaXmlMap.end())
+            throw DataException(50066, "missing XDB.X$QN" + tokSuf + " table, insert failed");
+        schemaXmlMapIt->second->dictXdbXQnAdd(xdbXQn);
         touched = true;
     }
 
@@ -1665,6 +1868,67 @@ namespace OpenLogReplicator {
         touched = true;
     }
 
+    void Schema::dictXdbTtSetDrop(XdbTtSet* xdbTtSet) {
+        if (ctx->trace & TRACE_SYSTEM)
+            ctx->logTrace(TRACE_SYSTEM, "delete XDB.XDB$TTSET (ROWID: " + xdbTtSet->rowId.toString() +
+                          ", GUID: '" + xdbTtSet->guid +
+                          "', TOKSUF: '" + xdbTtSet->tokSuf +
+                          "', FLAGS: " + std::to_string(xdbTtSet->flags) +
+                          ", OBJ#: " + std::to_string(xdbTtSet->obj) + ")");
+        auto xdbTtSetMapRowIdIt = xdbTtSetMapRowId.find(xdbTtSet->rowId);
+        if (xdbTtSetMapRowIdIt == xdbTtSetMapRowId.end())
+            return;
+        xdbTtSetMapRowId.erase(xdbTtSetMapRowIdIt);
+
+        auto xdbTtSetMapTsIt = xdbTtSetMapTs.find(xdbTtSet->tokSuf);
+        if (xdbTtSetMapTsIt != xdbTtSetMapTs.end())
+            xdbTtSetMapTs.erase(xdbTtSetMapTsIt);
+        else
+            ctx->warning(50030, "missing index for XDB.XDB$TTSET (TOKSUF: '" + xdbTtSet->tokSuf + "')");
+        touched = true;
+    }
+
+    void Schema::dictXdbXNmDrop(const std::string& tokSuf, XdbXNm* xdbXNm) {
+        if (ctx->trace & TRACE_SYSTEM)
+            ctx->logTrace(TRACE_SYSTEM, "delete XDB.X$NM" + tokSuf + " (ROWID: " + xdbXNm->rowId.toString() +
+                          ", NMSPCURI: '" + xdbXNm->nmSpcUri +
+                          "', ID: '" + xdbXNm->id + "')");
+
+        auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
+        if (schemaXmlMapIt == schemaXmlMap.end())
+            throw DataException(50066, "missing XDB.X$NM" + tokSuf + " table, delete failed");
+        schemaXmlMapIt->second->dictXdbXNmDrop(xdbXNm);
+        touched = true;
+    }
+
+    void Schema::dictXdbXPtDrop(const std::string& tokSuf, XdbXPt* xdbXPt) {
+        if (ctx->trace & TRACE_SYSTEM)
+            ctx->logTrace(TRACE_SYSTEM, "delete XDB.X$PT" + tokSuf + " (ROWID: " + xdbXPt->rowId.toString() +
+                          ", PATH: '" + xdbXPt->path +
+                          "', ID: '" + xdbXPt->id + "')");
+
+        auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
+        if (schemaXmlMapIt == schemaXmlMap.end())
+            throw DataException(50066, "missing XDB.X$PT" + tokSuf + " table, delete failed");
+        schemaXmlMapIt->second->dictXdbXPtDrop(xdbXPt);
+        touched = true;
+    }
+
+    void Schema::dictXdbXQnDrop(const std::string& tokSuf, XdbXQn* xdbXQn) {
+        if (ctx->trace & TRACE_SYSTEM)
+            ctx->logTrace(TRACE_SYSTEM, "delete XDB.X$QN" + tokSuf + " (ROWID: " + xdbXQn->rowId.toString() +
+                          ", NMSPCID '" + xdbXQn->nmSpcId +
+                          "', LOCALNAME: '" + xdbXQn->localName +
+                          "', FLAGS: '" + xdbXQn->flags +
+                          "', ID: '" + xdbXQn->id + "')");
+
+        auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
+        if (schemaXmlMapIt == schemaXmlMap.end())
+            throw DataException(50066, "missing XDB.X$QN" + tokSuf + " table, delete failed");
+        schemaXmlMapIt->second->dictXdbXQnDrop(xdbXQn);
+        touched = true;
+    }
+
     SysCCol* Schema::dictSysCColFind(typeRowId rowId) {
         auto sysCColMapRowIdIt = sysCColMapRowId.find(rowId);
         if (sysCColMapRowIdIt != sysCColMapRowId.end())
@@ -1783,6 +2047,41 @@ namespace OpenLogReplicator {
             return sysUserMapRowIdIt->second;
         else
             return nullptr;
+    }
+
+    XdbTtSet* Schema::dictXdbTtSetFind(typeRowId rowId) {
+        auto xdbTtSetMapRowIdIt = xdbTtSetMapRowId.find(rowId);
+        if (xdbTtSetMapRowIdIt != xdbTtSetMapRowId.end())
+            return xdbTtSetMapRowIdIt->second;
+        else
+            return nullptr;
+    }
+
+    XdbXNm* Schema::dictXdbXNmFind(const std::string& tokSuf, typeRowId rowId) {
+        auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
+        if (schemaXmlMapIt == schemaXmlMap.end())
+            throw DataException(50066, "missing XDB.X$NM" + tokSuf + " table, find failed");
+        SchemaXml* schemaXml = schemaXmlMapIt->second;
+
+        return schemaXml->dictXdbXNmFind(rowId);
+    }
+
+    XdbXPt* Schema::dictXdbXPtFind(const std::string& tokSuf, typeRowId rowId) {
+        auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
+        if (schemaXmlMapIt == schemaXmlMap.end())
+            throw DataException(50066, "missing XDB.X$PT" + tokSuf + " table, find failed");
+        SchemaXml* schemaXml = schemaXmlMapIt->second;
+
+        return schemaXml->dictXdbXPtFind(rowId);
+    }
+
+    XdbXQn* Schema::dictXdbXQnFind(const std::string& tokSuf, typeRowId rowId) {
+        auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
+        if (schemaXmlMapIt == schemaXmlMap.end())
+            throw DataException(50066, "missing XDB.X$QN" + tokSuf + " table, find failed");
+        SchemaXml* schemaXml = schemaXmlMapIt->second;
+
+        return schemaXml->dictXdbXQnFind(rowId);
     }
 
     void Schema::touchTable(typeObj obj) {
@@ -1923,7 +2222,7 @@ namespace OpenLogReplicator {
                                 std::to_string(table->dataObj) + ")");
     }
 
-    void Schema::dropUnusedMetadata(const std::set<std::string>& users, std::list<std::string>& msgs) {
+    void Schema::dropUnusedMetadata(const std::set<std::string>& users, std::vector<SchemaElement*> schemaElements, std::list<std::string>& msgs) {
         for (OracleTable* table : tablesTouched) {
             msgs.push_back(table->owner + "." + table->name + " (dataobj: " + std::to_string(table->dataObj) + ", obj: " +
                            std::to_string(table->obj) + ") ");
@@ -1942,17 +2241,36 @@ namespace OpenLogReplicator {
         }
 
         // SYS.OBJ$
-        for (auto sysObj: sysObjSetTouched) {
-            auto sysUserMapUserIt = sysUserMapUser.find(sysObj->owner);
-            if (sysUserMapUserIt != sysUserMapUser.end())
-                continue;
+        if (!FLAG(REDO_FLAGS_ADAPTIVE_SCHEMA))
+            // delete objects owned by users that are not in the list of users
+            for (auto sysObj: sysObjSetTouched) {
+                auto sysUserMapUserIt = sysUserMapUser.find(sysObj->owner);
+                if (sysUserMapUserIt != sysUserMapUser.end()) {
+                    SysUser* sysUser = sysUserMapUserIt->second;
+                    if (sysUser->name == "SYS") {
+                        if (!sysUser->single)
+                            continue;
+                    } else
+                    if (sysUser->name == "XDB") {
+                        if (!sysUser->single)
+                            continue;
+                    } else
+                        continue;
 
-            if (!FLAG(REDO_FLAGS_ADAPTIVE_SCHEMA))
-                continue;
+                    // SYS or XDB user, check if matches list of system tables
+                    for (SchemaElement* element : schemaElements) {
+                        std::regex regexOwner(element->owner);
+                        std::regex regexTable(element->table);
 
-            dictSysObjDrop(sysObj);
-            delete sysObj;
-        }
+                        // matches, keep it
+                        if (regex_match(sysUser->name, regexOwner) && regex_match(sysObj->name, regexTable))
+                            continue;
+                    }
+                }
+
+                dictSysObjDrop(sysObj);
+                delete sysObj;
+            }
 
         // SYS.CCOL$
         for (auto sysCCol: sysCColSetTouched) {
@@ -2488,8 +2806,8 @@ namespace OpenLogReplicator {
 
             std::ostringstream ss;
             ss << sysUser->name << "." << sysObj->name << " (dataobj: " << std::dec << sysTab->dataObj << ", obj: " << std::dec << sysObj->obj <<
-                    ", columns: " << std::dec << tableTmp->maxSegCol << ", lobs: " << std::dec << tableTmp->totalLobs << lobList.str() <<
-                    ", lob-idx: " << std::dec << lobIndexes << lobIndexesList.str() << ")";
+               ", columns: " << std::dec << tableTmp->maxSegCol << ", lobs: " << std::dec << tableTmp->totalLobs << lobList.str() <<
+               ", lob-idx: " << std::dec << lobIndexes << lobIndexesList.str() << ")";
             if (sysTab->isClustered())
                 ss << ", part of cluster";
             if (sysTab->isPartitioned())

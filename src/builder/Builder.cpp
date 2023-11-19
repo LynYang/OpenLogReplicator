@@ -1622,10 +1622,9 @@ namespace OpenLogReplicator {
         // bool bigint = false;
         bool xmlDecl = false;
         const char* standalone = "";
-        const char* version = "\"1.0\"";
+        const char* version = nullptr;
         const char* encoding = "";
 
-        ctx->warning(0, "XML binary data");
         uint64_t pos = 0;
 
         while (pos < length) {
@@ -1653,8 +1652,12 @@ namespace OpenLogReplicator {
                 if ((flags2 & XML_HEADER_ENCODING) != 0)
                     encoding = " encoding=\"UTF=8\"";
 
-                if ((flags2 & XML_HEADER_VERSION_1_1) != 0)
-                    version = "\"1.1\"";
+                if ((flags2 & XML_HEADER_VERSION) != 0) {
+                    if ((flags2 & XML_HEADER_VERSION_1_1) != 0)
+                        version = "\"1.1\"";
+                    else
+                        version = "\"1.0\"";
+                }
 
                 continue;
 
@@ -1729,21 +1732,19 @@ namespace OpenLogReplicator {
             valueBufferCheck(100, offset);
 
             valueBufferAppend("<?xml", 5);
-            valueBufferAppend(" version=", 9);
-            valueBufferAppend(version, strlen(version));
+            if (version != nullptr) {
+                valueBufferAppend(" version=", 9);
+                valueBufferAppend(version, strlen(version));
+            }
             valueBufferAppend(standalone, strlen(standalone));
             valueBufferAppend(encoding, strlen(encoding));
             valueBufferAppend("?>", 2);
-
-            ctx->info(0, "length: " + std::to_string(valueLengthOld));
-            ctx->info(0, "ptr: " + std::to_string(reinterpret_cast<uint64_t>(valueBufferOld)));
 
             // Dump raw data for future development
             valueBufferCheck(valueLengthOld * 3, offset);
             for (uint64_t i = 0; i < valueLengthOld; ++i) {
                 char txt[3];
                 txt[0] = ' ';
-                ctx->info(0, "val: " + std::to_string(static_cast<uint64_t>(static_cast<unsigned char>(valueBufferOld[i]))));
                 txt[1] = ctx->map16[((unsigned char)valueBufferOld[i]) >> 4];
                 txt[2] = ctx->map16[valueBufferOld[i] & 0x0F];
 

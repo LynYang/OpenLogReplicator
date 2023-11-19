@@ -104,6 +104,7 @@ list(APPEND ListMetadata
         metadata/Metadata.cpp
         metadata/Schema.cpp
         metadata/SchemaElement.cpp
+        metadata/SchemaXml.cpp
         metadata/Serializer.cpp
         metadata/SerializerJson.cpp)
 

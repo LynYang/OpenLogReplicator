@@ -754,6 +754,8 @@ If you encounter any of these errors, please report this issue.
 
 ==== code 50065: "empty attributes for XID: <xid>"
 
+==== code 50066: "missing <table> table, <operation> failed"
+
 == Warnings Messages
 
 === Warnings (6xxxx)

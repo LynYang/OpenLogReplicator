@@ -23,17 +23,6 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #include "../common/ConfigurationException.h"
 #include "../common/OracleIncarnation.h"
 #include "../common/RuntimeException.h"
-#include "../common/SysCCol.h"
-#include "../common/SysCDef.h"
-#include "../common/SysCol.h"
-#include "../common/SysDeferredStg.h"
-#include "../common/SysECol.h"
-#include "../common/SysObj.h"
-#include "../common/SysTab.h"
-#include "../common/SysTabComPart.h"
-#include "../common/SysTabPart.h"
-#include "../common/SysTabSubPart.h"
-#include "../common/SysUser.h"
 #include "../common/typeRowId.h"
 #include "../locales/CharacterSet.h"
 #include "../locales/Locales.h"
@@ -268,6 +257,10 @@ namespace OpenLogReplicator {
         addElement("SYS", "TABSUBPART\\$", OPTIONS_SYSTEM_TABLE);
         addElement("SYS", "TS\\$", OPTIONS_SYSTEM_TABLE);
         addElement("SYS", "USER\\$", OPTIONS_SYSTEM_TABLE);
+        addElement("XDB", "XDB\\$TTSET", OPTIONS_SYSTEM_TABLE);
+        addElement("XDB", "X\\$NM.*", OPTIONS_SYSTEM_TABLE);
+        addElement("XDB", "X\\$PT.*", OPTIONS_SYSTEM_TABLE);
+        addElement("XDB", "X\\$QN.*", OPTIONS_SYSTEM_TABLE);
     }
 
     void Metadata::commitElements() {

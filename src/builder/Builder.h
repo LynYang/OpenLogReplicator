@@ -58,8 +58,9 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #define XML_HEADER_STANDALONE                   0x01
 #define XML_HEADER_XMLDECL                      0x02
 #define XML_HEADER_ENCODING                     0x04
-#define XML_HEADER_VERSION_1_1                  0x08
+#define XML_HEADER_VERSION                      0x08
 #define XML_HEADER_STANDALONE_YES               0x10
+#define XML_HEADER_VERSION_1_1                  0x80
 
 namespace OpenLogReplicator {
     class Ctx;
@@ -751,6 +752,7 @@ namespace OpenLogReplicator {
                                      ", location: 16");
                         return false;
                     }
+                    std::cerr << "length: " << std::dec << totalLobLength << std::endl;
 
                     if ((flg4 & 0x0F) == 0) {
                         ++dataOffset;
@@ -808,6 +810,7 @@ namespace OpenLogReplicator {
                                 uint8_t flg5 = data[dataOffset++];
 
                                 typeDba page = ctx->read32Big(data + dataOffset);
+                                std::cerr << "page: 0x" << std::hex << std::setfill('0') << std::setw(8) << page << std::endl;
                                 dataOffset += 4;
                                 uint16_t pageCnt = 0;
                                 if ((flg5 & 0x20) == 0) {
@@ -816,6 +819,7 @@ namespace OpenLogReplicator {
                                     pageCnt = ctx->read16Big(data + dataOffset);
                                     dataOffset += 2;
                                 }
+                                std::cerr << "cnt: " << std::dec << pageCnt << std::endl;
 
                                 for (uint64_t j = 0; j < pageCnt; ++j) {
                                     LobDataElement element(page, 0);
@@ -1002,6 +1006,19 @@ namespace OpenLogReplicator {
 
             return true;
         }
+
+        void parseRaw(const uint8_t* data, uint64_t length, uint64_t offset) {
+            valueBufferPurge();
+            valueBufferCheck(length * 2, offset);
+
+            if (length == 0)
+                return;
+
+            for (uint64_t j = 0; j < length; ++j) {
+                valueBufferAppend(Ctx::map16[data[j] >> 4]);
+                valueBufferAppend(Ctx::map16[data[j] & 0x0F]);
+            }
+        };
 
         void parseString(const uint8_t* data, uint64_t length, uint64_t charsetId, uint64_t offset, bool appendData, bool hasPrev, bool hasNext,
                          bool isSystem) {
