@@ -2086,7 +2086,7 @@ namespace OpenLogReplicator {
     }
 
     void Schema::buildMaps(const std::string& owner, const std::string& table, const std::vector<std::string>& keys, const std::string& keysStr,
-                           typeOptions options, std::list<std::string>& msgs, bool suppLogDbPrimary, bool suppLogDbAll,
+                           const std::string& condition, typeOptions options, std::list<std::string>& msgs, bool suppLogDbPrimary, bool suppLogDbAll,
                            uint64_t defaultCharacterMapId, uint64_t defaultCharacterNcharMapId) {
         uint64_t tabCnt = 0;
         std::regex regexOwner(owner);
@@ -2517,6 +2517,7 @@ namespace OpenLogReplicator {
             }
             msgs.push_back(ss.str());
 
+            tableTmp->setCondition(condition);
             addTableToDict(tableTmp);
             tableTmp = nullptr;
         }

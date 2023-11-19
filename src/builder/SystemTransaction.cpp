@@ -41,7 +41,6 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #include "SystemTransaction.h"
 
 namespace OpenLogReplicator {
-
     SystemTransaction::SystemTransaction(Builder* newBuilder, Metadata* newMetadata) :
             ctx(newMetadata->ctx),
             builder(newBuilder),
@@ -1906,9 +1905,9 @@ namespace OpenLogReplicator {
         metadata->schema->dropUnusedMetadata(metadata->users, msgsDropped);
 
         for (SchemaElement* element: metadata->schemaElements)
-            metadata->schema->buildMaps(element->owner, element->table, element->keys, element->keysStr, element->options,
-                                        msgsUpdated, metadata->suppLogDbPrimary, metadata->suppLogDbAll,
-                                        metadata->defaultCharacterMapId, metadata->defaultCharacterNcharMapId);
+            metadata->schema->buildMaps(element->owner, element->table, element->keys, element->keysStr, element->condition, element->options, msgsUpdated,
+                                        metadata->suppLogDbPrimary, metadata->suppLogDbAll, metadata->defaultCharacterMapId,
+                                        metadata->defaultCharacterNcharMapId);
         metadata->schema->resetTouched();
 
         for (const auto& msg: msgsDropped) {

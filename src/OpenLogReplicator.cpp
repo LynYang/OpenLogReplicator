@@ -75,7 +75,6 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #endif /* LINK_LIBRARY_RDKAFKA */
 
 namespace OpenLogReplicator {
-
     OpenLogReplicator::OpenLogReplicator(const std::string& newConfigFileName, Ctx* newCtx) :
             replicator(nullptr),
             fid(-1),
@@ -703,6 +702,10 @@ namespace OpenLogReplicator {
                             }
                         } else
                             element->keysStr = "";
+
+                        if (tableElementJson.HasMember("condition")) {
+                            element->condition = Ctx::getJsonFieldS(configFileName, JSON_CONDITION_LENGTH, tableElementJson, "condition");
+                        }
                     }
                 }
 

@@ -1,4 +1,4 @@
-/* Header for SchemaElement class
+/* Definition of an expression
    Copyright (C) 2018-2023 Adam Leszczynski (aleszczynski@bersler.com)
 
 This file is part of OpenLogReplicator.
@@ -17,24 +17,27 @@ You should have received a copy of the GNU General Public License
 along with OpenLogReplicator; see the file LICENSE;  If not see
 <http://www.gnu.org/licenses/>.  */
 
+#include <unordered_map>
 #include <vector>
 
-#include "../common/types.h"
+#include "types.h"
 
-#ifndef SCHEMA_ELEMENT_H_
-#define SCHEMA_ELEMENT_H_
+#ifndef EXPRESSION_H_
+#define EXPRESSION_H_
 
 namespace OpenLogReplicator {
-    class SchemaElement final {
+    class Expression {
     public:
-        std::string owner;
-        std::string table;
-        std::vector<std::string> keys;
-        std::string keysStr;
-        std::string condition;
-        typeOptions options;
+        uint64_t tokenType;
+        std::string value;
+        Expression* left;
+        Expression* right;
 
-        SchemaElement(const char* newOwner, const char* newTable, typeOptions newOptions);
+        Expression(uint64_t newTokenType, const std::string& newValue);
+        Expression();
+        virtual ~Expression();
+
+        virtual bool isTrue(char operation, std::unordered_map<std::string, std::string> attributes) const;
     };
 }
 

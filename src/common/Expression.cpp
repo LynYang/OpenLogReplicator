@@ -1,4 +1,4 @@
-/* Header for SchemaElement class
+/* Expression for evaluating filter
    Copyright (C) 2018-2023 Adam Leszczynski (aleszczynski@bersler.com)
 
 This file is part of OpenLogReplicator.
@@ -17,25 +17,30 @@ You should have received a copy of the GNU General Public License
 along with OpenLogReplicator; see the file LICENSE;  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#include <vector>
-
-#include "../common/types.h"
-
-#ifndef SCHEMA_ELEMENT_H_
-#define SCHEMA_ELEMENT_H_
+#include "Expression.h"
+#include "Token.h"
 
 namespace OpenLogReplicator {
-    class SchemaElement final {
-    public:
-        std::string owner;
-        std::string table;
-        std::vector<std::string> keys;
-        std::string keysStr;
-        std::string condition;
-        typeOptions options;
+    Expression::Expression(uint64_t newTokenType, const std::string& newValue) {
+        tokenType = newTokenType;
+        value = newValue;
+        left = nullptr;
+        right = nullptr;
+    }
 
-        SchemaElement(const char* newOwner, const char* newTable, typeOptions newOptions);
-    };
+    Expression::Expression() {
+        tokenType = TOKEN_TYPE_TRUE;
+        value = "";
+        left = nullptr;
+        right = nullptr;
+    }
+
+    Expression::~Expression() {
+    }
+
+    bool Expression::isTrue(char operation, std::unordered_map<std::string, std::string> attributes) const {
+
+
+        return true;
+    }
 }
-
-#endif

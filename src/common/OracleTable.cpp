@@ -17,10 +17,12 @@ You should have received a copy of the GNU General Public License
 along with OpenLogReplicator; see the file LICENSE;  If not see
 <http://www.gnu.org/licenses/>.  */
 
+#include "Expression.h"
 #include "RuntimeException.h"
 #include "OracleColumn.h"
 #include "OracleLob.h"
 #include "OracleTable.h"
+#include "Token.h"
 
 namespace OpenLogReplicator {
     OracleTable::OracleTable(typeObj newObj, typeDataObj newDataObj, typeUser newUser, typeCol newCluCols, typeOptions newOptions, const std::string& newOwner,
@@ -113,6 +115,22 @@ namespace OpenLogReplicator {
     void OracleTable::addTablePartition(typeObj newObj, typeDataObj newDataObj) {
         typeObj2 objx = (static_cast<typeObj2>(newObj) << 32) | static_cast<typeObj2>(newDataObj);
         tablePartitions.push_back(objx);
+    }
+
+    bool OracleTable::matchesCondition(char op, const std::unordered_map<std::string, std::string>* attributes) {
+        std::string login_username = "";
+        auto attributesIt = attributes->find("login username");
+        if (attributesIt != attributes->end())
+            login_username = attributesIt->second;
+        std::cerr << "condition: " << op << " condition: " << conditionTxt << " login: " << login_username << '\n';
+        return true;
+    }
+
+    void OracleTable::setCondition(const std::string& condition) {
+        std::vector<Token> tokens;
+        Token::buildTokens(condition, tokens);
+        Token::buildExpression(tokens, expression);
+        this->conditionTxt = condition;
     }
 
     std::ostream& operator<<(std::ostream& os, const OracleTable& table) {

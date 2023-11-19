@@ -21,6 +21,7 @@ list(APPEND ListCommon
         common/ConfigurationException.cpp
         common/Ctx.cpp
         common/DataException.cpp
+        common/Expression.cpp
         common/NetworkException.cpp
         common/OracleColumn.cpp
         common/OracleIncarnation.cpp
@@ -33,6 +34,7 @@ list(APPEND ListCommon
         common/RedoLogRecord.cpp
         common/RuntimeException.cpp
         common/Thread.cpp
+        common/Token.cpp
         common/Timer.cpp)
 
 list(APPEND ListReplicator

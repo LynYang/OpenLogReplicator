@@ -42,7 +42,6 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #include "SerializerJson.h"
 
 namespace OpenLogReplicator {
-
     SerializerJson::SerializerJson() :
             Serializer() {
     }
@@ -571,7 +570,7 @@ namespace OpenLogReplicator {
                             msgs.push_back("- creating table schema for owner: " + element->owner + " table: " + element->table + " options: " +
                                            std::to_string(element->options));
 
-                        metadata->schema->buildMaps(element->owner, element->table, element->keys, element->keysStr, element->options, msgs,
+                        metadata->schema->buildMaps(element->owner, element->table, element->keys, element->keysStr, element->condition, element->options, msgs,
                                                     metadata->suppLogDbPrimary, metadata->suppLogDbAll, metadata->defaultCharacterMapId,
                                                     metadata->defaultCharacterNcharMapId);
                     }

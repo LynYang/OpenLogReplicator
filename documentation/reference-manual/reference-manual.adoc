@@ -1,7 +1,7 @@
 = Reference Manual
 :author: Adam Leszczyński <aleszczynski@bersler.com>
 :revnumber: 1.3.1
-:revdate: 2023-11-19
+:revdate: 2023-11-20
 :imagesdir: ./images
 :icons: font
 :toc: preamble
@@ -963,6 +963,57 @@ The columns are separated by comma.
 The column names are case-sensitive.
 
 _TIP:_ If a table doesn't contain a primary key, a custom set of columns can be treated as a primary key.
+
+|`condition`
+|_string_, max length: 16384
+|An expression which should be evaluated for every row. The format of the field is C-like.
+
+Example:
+`"condition": "(op != 'd') \|\| (login_username != 'USER1')"`
+
+The expression is evaluated from left to right. The following tokens can be used:
+
+* \|\| -- logical OR,
+
+* ! -- logical NOT,
+
+* && -- logical AND,
+
+* () -- parentheses to define the order of evaluation,
+
+* == -- equal,
+
+* != -- not equal.
+
+The expression can contain the following tokens:
+
+* `audit_sessionid`
+
+* `client_id`
+
+* `client info`
+
+* `current username`
+
+* `login_username` -- database username which performed the operation;
+
+* `machine_name`
+
+* `op` -- type of operation: `c` - create (insert), `u` - update, `d` - delete, `ddl` - DDL operation;
+
+* `OS_process_name`
+
+* `OS_process_id`
+
+* `OS_terminal`
+
+* `serial_number`
+
+* `session_number`
+
+* `transaction_name` -- name of the transaction;
+
+* `version`
 
 |===
 
